@@ -257,22 +257,22 @@ for (let i = 0; i < 12; i++) {
 function createTarget(distance, xOffset = 0) {
   const group = new THREE.Group();
 
-  // Post
+  // Post (taller to support bigger target)
   const post = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.06, 0.08, 2, 8),
+    new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8),
     new THREE.MeshLambertMaterial({ color: 0x6B4226 })
   );
-  post.position.y = 1;
+  post.position.y = 1.2;
   post.castShadow = true;
   group.add(post);
 
-  // Target face
+  // Target face — upscaled rings (~2x bigger)
   const rings = [
-    { radius: 0.8, color: 0xffffff },
-    { radius: 0.65, color: 0x222222 },
-    { radius: 0.5, color: 0x3399ff },
-    { radius: 0.35, color: 0xff3333 },
-    { radius: 0.18, color: 0xffdd00 },
+    { radius: 1.4, color: 0xffffff },
+    { radius: 1.12, color: 0x222222 },
+    { radius: 0.84, color: 0x3399ff },
+    { radius: 0.56, color: 0xff3333 },
+    { radius: 0.28, color: 0xffdd00 },
   ];
 
   const targetFace = new THREE.Group();
@@ -284,21 +284,23 @@ function createTarget(distance, xOffset = 0) {
     targetFace.add(mesh);
   });
 
-  targetFace.position.set(0, 2, -0.05);
+  targetFace.position.set(0, 2.4, -0.05);
   group.add(targetFace);
 
-  // Back board
+  // Round back board (disc instead of square)
+  const boardGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.12, 32);
   const board = new THREE.Mesh(
-    new THREE.BoxGeometry(1.8, 1.8, 0.12),
+    boardGeo,
     new THREE.MeshLambertMaterial({ color: 0xc9a96e })
   );
-  board.position.set(0, 2, -0.1);
+  board.rotation.x = Math.PI / 2; // rotate to face player
+  board.position.set(0, 2.4, -0.1);
   board.castShadow = true;
   group.add(board);
 
   group.position.set(xOffset, 0, -distance);
 
-  // Distance label
+  // Distance label (raised to clear bigger target)
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 64;
@@ -312,10 +314,10 @@ function createTarget(distance, xOffset = 0) {
     new THREE.PlaneGeometry(1, 0.5),
     new THREE.MeshBasicMaterial({ map: tex, transparent: true })
   );
-  label.position.set(0, 3.2, 0);
+  label.position.set(0, 4.2, 0);
   group.add(label);
 
-  group.userData = { center: new THREE.Vector3(xOffset, 2, -distance), radius: 0.8, distance };
+  group.userData = { center: new THREE.Vector3(xOffset, 2.4, -distance), radius: 1.4, distance };
   scene.add(group);
   targets.push(group);
   return group;
@@ -331,42 +333,107 @@ function spawnMovingTarget() {
   const z = -(10 + Math.random() * 25);
   const startX = (Math.random() > 0.5 ? 1 : -1) * 20;
   const speed = 4 + Math.random() * 4;
+  const isBird = Math.random() > 0.5;
 
   const group = new THREE.Group();
 
-  // Glowing orb
-  const orb = new THREE.Mesh(
-    new THREE.SphereGeometry(0.5, 16, 16),
-    new THREE.MeshStandardMaterial({
-      color: 0xff8800,
-      emissive: 0xff4400,
-      emissiveIntensity: 0.8,
-      metalness: 0.3,
-      roughness: 0.4
-    })
-  );
-  orb.castShadow = true;
-  group.add(orb);
+  if (isBird) {
+    // --- Bird silhouette ---
+    const birdColor = 0x222222;
+    const birdMat = new THREE.MeshLambertMaterial({ color: birdColor, side: THREE.DoubleSide });
 
-  // Inner glow
-  const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(0.3, 12, 12),
-    new THREE.MeshBasicMaterial({ color: 0xffdd00 })
-  );
-  group.add(glow);
+    // Body — elongated sphere
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(0.25, 10, 8),
+      birdMat
+    );
+    body.scale.set(1, 0.7, 2);
+    body.castShadow = true;
+    group.add(body);
 
-  // Point light
-  const light = new THREE.PointLight(0xff6600, 2, 8);
-  group.add(light);
+    // Left wing
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(0, 0);
+    wingShape.lineTo(-1, 0.15);
+    wingShape.lineTo(-0.3, 0);
+    wingShape.closePath();
+    const wingGeo = new THREE.ShapeGeometry(wingShape);
+    const leftWing = new THREE.Mesh(wingGeo, birdMat);
+    leftWing.name = 'leftWing';
+    leftWing.position.set(-0.1, 0.05, 0);
+    group.add(leftWing);
 
-  group.position.set(startX, y, z);
-  group.userData = {
-    speed: speed * (startX > 0 ? -1 : 1),
-    alive: true,
-    startX,
-    radius: 0.5,
-    center: group.position
-  };
+    // Right wing (mirrored)
+    const rWingShape = new THREE.Shape();
+    rWingShape.moveTo(0, 0);
+    rWingShape.lineTo(1, 0.15);
+    rWingShape.lineTo(0.3, 0);
+    rWingShape.closePath();
+    const rWingGeo = new THREE.ShapeGeometry(rWingShape);
+    const rightWing = new THREE.Mesh(rWingGeo, birdMat);
+    rightWing.name = 'rightWing';
+    rightWing.position.set(0.1, 0.05, 0);
+    group.add(rightWing);
+
+    // Tail
+    const tailShape = new THREE.Shape();
+    tailShape.moveTo(0, 0);
+    tailShape.lineTo(-0.2, 0.15);
+    tailShape.lineTo(0.2, 0.15);
+    tailShape.closePath();
+    const tailGeo = new THREE.ShapeGeometry(tailShape);
+    const tail = new THREE.Mesh(tailGeo, birdMat);
+    tail.position.set(0, 0.05, 0.5);
+    group.add(tail);
+
+    // Face bird along direction of travel
+    group.rotation.y = startX > 0 ? Math.PI / 2 : -Math.PI / 2;
+
+    group.position.set(startX, y, z);
+    group.userData = {
+      speed: speed * (startX > 0 ? -1 : 1),
+      alive: true,
+      startX,
+      radius: 0.5,
+      center: group.position,
+      isBird: true
+    };
+  } else {
+    // --- Glowing orb (existing) ---
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 16, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0xff8800,
+        emissive: 0xff4400,
+        emissiveIntensity: 0.8,
+        metalness: 0.3,
+        roughness: 0.4
+      })
+    );
+    orb.castShadow = true;
+    group.add(orb);
+
+    // Inner glow
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffdd00 })
+    );
+    group.add(glow);
+
+    // Point light
+    const light = new THREE.PointLight(0xff6600, 2, 8);
+    group.add(light);
+
+    group.position.set(startX, y, z);
+    group.userData = {
+      speed: speed * (startX > 0 ? -1 : 1),
+      alive: true,
+      startX,
+      radius: 0.5,
+      center: group.position,
+      isBird: false
+    };
+  }
 
   scene.add(group);
   movingTargets.push(group);
@@ -711,7 +778,7 @@ function animate() {
   // Spawn moving targets
   if (gameActive && now > nextMovingTargetTime) {
     spawnMovingTarget();
-    nextMovingTargetTime = now + 4000 + Math.random() * 5000;
+    nextMovingTargetTime = now + 3000 + Math.random() * 3000;
   }
 
   // Update moving targets
@@ -720,8 +787,17 @@ function animate() {
     mt.position.x += mt.userData.speed * dt;
     mt.position.y += Math.sin(now * 0.002 + i) * 0.003;
 
-    // Rotate orb
-    mt.rotation.y += dt * 2;
+    if (mt.userData.isBird) {
+      // Wing flap animation
+      const flapAngle = Math.sin(now * 0.01) * 0.6;
+      mt.traverse((child) => {
+        if (child.name === 'leftWing') child.rotation.x = flapAngle;
+        if (child.name === 'rightWing') child.rotation.x = -flapAngle;
+      });
+    } else {
+      // Rotate orb
+      mt.rotation.y += dt * 2;
+    }
 
     // Remove if off screen
     if (Math.abs(mt.position.x) > 25) {
