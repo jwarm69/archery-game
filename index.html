@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Archery Range</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+  body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; overscroll-behavior: none; }
   canvas { display: block; }
   #hud {
     position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 10;
@@ -14,6 +14,7 @@
   }
   #hud div { color: #fff; font-size: 22px; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
   #score { text-align: center; flex: 1; font-size: 28px !important; font-weight: bold; }
+  #round-display { color: #aaa !important; font-size: 16px !important; text-align: center; }
   #crosshair {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: 30px; height: 30px; pointer-events: none; z-index: 10;
@@ -26,6 +27,33 @@
   #crosshair .dot {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: 4px; height: 4px; background: #ff4444; border-radius: 50%;
+  }
+  /* Power bar */
+  #power-bar-container {
+    position: fixed; top: calc(50% + 30px); left: 50%; transform: translateX(-50%);
+    width: 80px; height: 8px; background: rgba(0,0,0,0.5); border-radius: 4px;
+    pointer-events: none; z-index: 10; display: none; border: 1px solid rgba(255,255,255,0.3);
+  }
+  #power-bar-fill {
+    height: 100%; width: 0%; border-radius: 3px;
+    transition: width 0.05s linear;
+  }
+  /* Wind compass */
+  #wind-compass {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    pointer-events: none; z-index: 10;
+  }
+  #wind-label {
+    position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px; text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    pointer-events: none; z-index: 10; text-align: center; white-space: nowrap;
+  }
+  /* Slow-mo vignette */
+  #slowmo-vignette {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 9; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);
+    transition: opacity 0.3s;
   }
   #bonus-popup {
     position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
@@ -46,7 +74,7 @@
   }
   #game-over h1 { font-size: 52px; margin-bottom: 10px; }
   #game-over .final-score { font-size: 72px; color: #ffdd00; margin: 20px 0; }
-  #game-over .breakdown { font-size: 20px; color: #aaa; margin-bottom: 30px; }
+  #game-over .breakdown { font-size: 20px; color: #aaa; margin-bottom: 30px; text-align: center; line-height: 1.6; }
   #game-over button {
     padding: 15px 40px; font-size: 22px; background: #ff4444; color: #fff;
     border: none; border-radius: 8px; cursor: pointer; pointer-events: all;
@@ -59,7 +87,7 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff;
   }
   #start-screen h1 { font-size: 56px; margin-bottom: 10px; }
-  #start-screen p { font-size: 20px; color: #aaa; margin-bottom: 30px; }
+  #start-screen p { font-size: 20px; color: #aaa; margin-bottom: 30px; text-align: center; }
   #start-screen button {
     padding: 15px 40px; font-size: 22px; background: #4CAF50; color: #fff;
     border: none; border-radius: 8px; cursor: pointer;
@@ -76,23 +104,47 @@
     border-bottom: 6px solid #ff4444;
   }
   .arrow-icon.used { opacity: 0.2; }
+
+  /* Mobile responsive */
+  @media (pointer: coarse) {
+    #crosshair { width: 50px; height: 50px; }
+    #crosshair .dot { width: 8px; height: 8px; }
+    #crosshair::before { width: 3px; }
+    #crosshair::after { height: 3px; }
+    #hud div { font-size: 18px; }
+    #score { font-size: 24px !important; }
+    #power-bar-container { width: 100px; height: 12px; top: calc(50% + 40px); }
+    #start-screen h1 { font-size: 40px; }
+    #start-screen p { font-size: 16px; padding: 0 20px; }
+    #game-over h1 { font-size: 40px; }
+    #game-over .final-score { font-size: 56px; }
+    #game-over .breakdown { font-size: 16px; padding: 0 20px; }
+    #wind-label { font-size: 12px; }
+  }
 </style>
 </head>
 <body>
 
 <div id="start-screen">
   <h1>Archery Range</h1>
-  <p>15 arrows. Aim true. Hit the bullseye.</p>
-  <button onclick="startGame()">Click to Play</button>
+  <p>15 arrows. Hold to draw, release to fire.<br>Aim true. Hit the bullseye.</p>
+  <button id="start-btn" onclick="startGame()">Click to Play</button>
 </div>
 
 <div id="hud">
   <div id="arrows-left"></div>
-  <div id="score">0</div>
+  <div style="flex:1; text-align:center;">
+    <div id="score">0</div>
+    <div id="round-display"></div>
+  </div>
   <div id="best">Best: 0</div>
 </div>
 
 <div id="crosshair"><div class="dot"></div></div>
+<div id="power-bar-container"><div id="power-bar-fill"></div></div>
+<canvas id="wind-compass" width="60" height="60"></canvas>
+<div id="wind-label"></div>
+<div id="slowmo-vignette"></div>
 <div id="bonus-popup">BONUS +15</div>
 <div id="hit-popup">+10</div>
 
@@ -100,7 +152,7 @@
   <h1>Round Over</h1>
   <div class="final-score" id="final-score">0</div>
   <div class="breakdown" id="breakdown"></div>
-  <button onclick="startGame()">Play Again</button>
+  <button id="replay-btn" onclick="startGame()">Play Again</button>
 </div>
 
 <script type="importmap">
@@ -113,6 +165,13 @@
 <script type="module">
 import * as THREE from 'three';
 
+// --- Touch Detection ---
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+if (isTouchDevice) {
+  document.getElementById('start-btn').textContent = 'Tap to Play';
+  document.getElementById('replay-btn').textContent = 'Tap to Play Again';
+}
+
 // --- Game State ---
 const TOTAL_ARROWS = 15;
 let arrowsLeft, score, hits, bullseyes, gameActive, bestScore = 0;
@@ -121,6 +180,31 @@ const arrows = [];
 const targets = [];
 const movingTargets = [];
 let nextMovingTargetTime = 0;
+
+// Phase 1: Draw mechanic state
+let isDrawing = false;
+let drawStartTime = 0;
+const DRAW_MAX_TIME = 1.5;
+let nockedArrow = null;
+
+// Phase 2: Wind + Difficulty
+let wind = new THREE.Vector3(0, 0, 0);
+let windStrengthRange = 3;
+let roundNumber = 0;
+let difficultyMultiplier = 1;
+
+// Phase 3: Visual polish
+const trailLines = [];
+const stuckArrows = [];
+const hitMarkers = [];
+const clouds = [];
+let slowMoActive = false;
+let slowMoStartTime = 0;
+const SLOWMO_DURATION = 2.0;
+
+// Phase 4: Touch state
+let touchId = null;
+let touchStartX = 0, touchStartY = 0;
 
 // --- Three.js Setup ---
 const scene = new THREE.Scene();
@@ -167,6 +251,39 @@ const skyMat = new THREE.ShaderMaterial({
   `
 });
 scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// --- Phase 3D: Animated Clouds ---
+function createCloudCluster(x, y, z) {
+  const group = new THREE.Group();
+  const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  const numPuffs = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < numPuffs; i++) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(1.5 + Math.random() * 2, 8, 8),
+      cloudMat
+    );
+    puff.position.set(
+      (Math.random() - 0.5) * 4,
+      (Math.random() - 0.5) * 0.8,
+      (Math.random() - 0.5) * 2
+    );
+    puff.scale.set(1, 0.4 + Math.random() * 0.3, 1);
+    group.add(puff);
+  }
+  group.position.set(x, y, z);
+  group.userData = { speed: 0.3 + Math.random() * 0.5 };
+  scene.add(group);
+  clouds.push(group);
+  return group;
+}
+
+for (let i = 0; i < 6; i++) {
+  createCloudCluster(
+    (Math.random() - 0.5) * 140,
+    25 + Math.random() * 15,
+    -(20 + Math.random() * 60)
+  );
+}
 
 // --- Lighting ---
 const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
@@ -245,7 +362,6 @@ function createTree(x, z) {
   return group;
 }
 
-// Scatter trees along the sides
 for (let i = 0; i < 12; i++) {
   const side = Math.random() > 0.5 ? 1 : -1;
   const x = side * (10 + Math.random() * 15);
@@ -257,7 +373,6 @@ for (let i = 0; i < 12; i++) {
 function createTarget(distance, xOffset = 0) {
   const group = new THREE.Group();
 
-  // Post (taller to support bigger target)
   const post = new THREE.Mesh(
     new THREE.CylinderGeometry(0.08, 0.1, 2.4, 8),
     new THREE.MeshLambertMaterial({ color: 0x6B4226 })
@@ -266,7 +381,6 @@ function createTarget(distance, xOffset = 0) {
   post.castShadow = true;
   group.add(post);
 
-  // Target face — upscaled rings (~2x bigger)
   const rings = [
     { radius: 1.4, color: 0xffffff },
     { radius: 1.12, color: 0x222222 },
@@ -276,6 +390,7 @@ function createTarget(distance, xOffset = 0) {
   ];
 
   const targetFace = new THREE.Group();
+  targetFace.name = 'targetFace';
   rings.forEach((ring, i) => {
     const geo = new THREE.CircleGeometry(ring.radius, 32);
     const mat = new THREE.MeshLambertMaterial({ color: ring.color, side: THREE.DoubleSide });
@@ -287,20 +402,18 @@ function createTarget(distance, xOffset = 0) {
   targetFace.position.set(0, 2.4, -0.05);
   group.add(targetFace);
 
-  // Round back board (disc instead of square)
   const boardGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.12, 32);
   const board = new THREE.Mesh(
     boardGeo,
     new THREE.MeshLambertMaterial({ color: 0xc9a96e })
   );
-  board.rotation.x = Math.PI / 2; // rotate to face player
+  board.rotation.x = Math.PI / 2;
   board.position.set(0, 2.4, -0.1);
   board.castShadow = true;
   group.add(board);
 
   group.position.set(xOffset, 0, -distance);
 
-  // Distance label (raised to clear bigger target)
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 64;
@@ -332,17 +445,15 @@ function spawnMovingTarget() {
   const y = 2.5 + Math.random() * 3;
   const z = -(10 + Math.random() * 25);
   const startX = (Math.random() > 0.5 ? 1 : -1) * 20;
-  const speed = 4 + Math.random() * 4;
+  const speed = (4 + Math.random() * 4) * difficultyMultiplier;
   const isBird = Math.random() > 0.5;
 
   const group = new THREE.Group();
 
   if (isBird) {
-    // --- Bird silhouette ---
     const birdColor = 0x222222;
     const birdMat = new THREE.MeshLambertMaterial({ color: birdColor, side: THREE.DoubleSide });
 
-    // Body — elongated sphere
     const body = new THREE.Mesh(
       new THREE.SphereGeometry(0.25, 10, 8),
       birdMat
@@ -351,7 +462,6 @@ function spawnMovingTarget() {
     body.castShadow = true;
     group.add(body);
 
-    // Left wing
     const wingShape = new THREE.Shape();
     wingShape.moveTo(0, 0);
     wingShape.lineTo(-1, 0.15);
@@ -363,7 +473,6 @@ function spawnMovingTarget() {
     leftWing.position.set(-0.1, 0.05, 0);
     group.add(leftWing);
 
-    // Right wing (mirrored)
     const rWingShape = new THREE.Shape();
     rWingShape.moveTo(0, 0);
     rWingShape.lineTo(1, 0.15);
@@ -375,7 +484,6 @@ function spawnMovingTarget() {
     rightWing.position.set(0.1, 0.05, 0);
     group.add(rightWing);
 
-    // Tail
     const tailShape = new THREE.Shape();
     tailShape.moveTo(0, 0);
     tailShape.lineTo(-0.2, 0.15);
@@ -386,7 +494,6 @@ function spawnMovingTarget() {
     tail.position.set(0, 0.05, 0.5);
     group.add(tail);
 
-    // Face bird along direction of travel
     group.rotation.y = startX > 0 ? Math.PI / 2 : -Math.PI / 2;
 
     group.position.set(startX, y, z);
@@ -399,7 +506,6 @@ function spawnMovingTarget() {
       isBird: true
     };
   } else {
-    // --- Glowing orb (existing) ---
     const orb = new THREE.Mesh(
       new THREE.SphereGeometry(0.5, 16, 16),
       new THREE.MeshStandardMaterial({
@@ -413,14 +519,12 @@ function spawnMovingTarget() {
     orb.castShadow = true;
     group.add(orb);
 
-    // Inner glow
     const glow = new THREE.Mesh(
       new THREE.SphereGeometry(0.3, 12, 12),
       new THREE.MeshBasicMaterial({ color: 0xffdd00 })
     );
     group.add(glow);
 
-    // Point light
     const light = new THREE.PointLight(0xff6600, 2, 8);
     group.add(light);
 
@@ -443,7 +547,6 @@ function spawnMovingTarget() {
 function createArrow() {
   const group = new THREE.Group();
 
-  // Shaft
   const shaft = new THREE.Mesh(
     new THREE.CylinderGeometry(0.015, 0.015, 0.8, 6),
     new THREE.MeshLambertMaterial({ color: 0xc9a040 })
@@ -452,7 +555,6 @@ function createArrow() {
   shaft.position.z = -0.4;
   group.add(shaft);
 
-  // Tip
   const tip = new THREE.Mesh(
     new THREE.ConeGeometry(0.03, 0.1, 6),
     new THREE.MeshLambertMaterial({ color: 0x888888 })
@@ -461,7 +563,6 @@ function createArrow() {
   tip.position.z = -0.85;
   group.add(tip);
 
-  // Fletching
   const fletchGeo = new THREE.BufferGeometry();
   const verts = new Float32Array([0,0,0, 0,0.06,0.15, 0,0,0.15]);
   fletchGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
@@ -487,16 +588,21 @@ function createBow() {
   );
   const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.015, 8, false);
   const bowMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-  const bow = new THREE.Mesh(tubeGeo, bowMat);
-  group.add(bow);
+  const bowMesh = new THREE.Mesh(tubeGeo, bowMat);
+  group.add(bowMesh);
 
-  // String
-  const stringGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, -0.5, 0),
-    new THREE.Vector3(0, 0.5, 0)
+  // Bowstring — 3-point line for draw animation
+  const stringPositions = new Float32Array([
+    0, -0.5, 0,
+    0, 0, 0,
+    0, 0.5, 0
   ]);
+  const stringGeo = new THREE.BufferGeometry();
+  stringGeo.setAttribute('position', new THREE.BufferAttribute(stringPositions, 3));
   const stringMat = new THREE.LineBasicMaterial({ color: 0xdddddd });
-  group.add(new THREE.Line(stringGeo, stringMat));
+  const bowString = new THREE.Line(stringGeo, stringMat);
+  bowString.name = 'bowString';
+  group.add(bowString);
 
   group.position.set(0.4, -0.25, -0.6);
   group.rotation.z = -0.1;
@@ -507,30 +613,201 @@ const bow = createBow();
 camera.add(bow);
 scene.add(camera);
 
-// --- Shoot ---
-function shoot() {
+// --- Phase 1: Draw Power Helper ---
+function getDrawPower() {
+  if (!isDrawing) return 0;
+  const elapsed = (performance.now() - drawStartTime) / 1000;
+  return Math.min(elapsed / DRAW_MAX_TIME, 1);
+}
+
+function updateBowstring(power) {
+  const bowString = bow.getObjectByName('bowString');
+  if (!bowString) return;
+  const posAttr = bowString.geometry.getAttribute('position');
+  // Middle point pulls back on Z axis
+  posAttr.setZ(1, power * 0.25);
+  posAttr.needsUpdate = true;
+}
+
+function showNockedArrow(show) {
+  if (show && !nockedArrow) {
+    nockedArrow = createArrow();
+    nockedArrow.scale.setScalar(0.7);
+    nockedArrow.position.set(0.4, -0.25, -0.6);
+    nockedArrow.rotation.set(0, 0, -0.1);
+    camera.add(nockedArrow);
+  } else if (!show && nockedArrow) {
+    camera.remove(nockedArrow);
+    nockedArrow = null;
+  }
+}
+
+function updateNockedArrowPosition(power) {
+  if (nockedArrow) {
+    nockedArrow.position.z = -0.6 + power * 0.25;
+  }
+}
+
+function updatePowerBar(power) {
+  const container = document.getElementById('power-bar-container');
+  const fill = document.getElementById('power-bar-fill');
+  if (power > 0) {
+    container.style.display = 'block';
+    fill.style.width = (power * 100) + '%';
+    // Green -> yellow -> red gradient
+    if (power < 0.5) {
+      const t = power / 0.5;
+      const r = Math.round(255 * t);
+      const g = 200;
+      fill.style.background = `rgb(${r},${g},0)`;
+    } else {
+      const t = (power - 0.5) / 0.5;
+      const g = Math.round(200 * (1 - t));
+      fill.style.background = `rgb(255,${g},0)`;
+    }
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+// --- Phase 2: Wind System ---
+function randomizeWind() {
+  const angle = Math.random() * Math.PI * 2;
+  const strength = Math.random() * windStrengthRange * difficultyMultiplier;
+  wind.set(Math.cos(angle) * strength, 0, Math.sin(angle) * strength);
+  drawWindCompass();
+}
+
+function drawWindCompass() {
+  const canvas = document.getElementById('wind-compass');
+  const ctx = canvas.getContext('2d');
+  const cx = 30, cy = 30, r = 24;
+  ctx.clearRect(0, 0, 60, 60);
+
+  // Background circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Wind arrow
+  const strength = Math.sqrt(wind.x * wind.x + wind.z * wind.z);
+  if (strength > 0.2) {
+    const angle = Math.atan2(wind.x, -wind.z);
+    const len = Math.min(strength / (windStrengthRange * difficultyMultiplier), 1) * (r - 4);
+    const ex = cx + Math.sin(angle) * len;
+    const ey = cy - Math.cos(angle) * len;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(ex, ey);
+    ctx.strokeStyle = '#ff8833';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Arrowhead
+    const headLen = 6;
+    const ha = angle + Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex + Math.sin(ha - 0.5) * headLen, ey - Math.cos(ha - 0.5) * headLen);
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex + Math.sin(ha + 0.5) * headLen, ey - Math.cos(ha + 0.5) * headLen);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Wind label
+  const label = document.getElementById('wind-label');
+  let desc;
+  if (strength < 0.5) desc = 'Calm';
+  else if (strength < 2) desc = 'Light';
+  else if (strength < 4) desc = 'Moderate';
+  else desc = 'Strong';
+  label.textContent = `Wind: ${desc}`;
+}
+
+// --- Phase 3A: Arrow Trail ---
+function createTrail(arrow) {
+  const positions = new Float32Array(15 * 3);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setDrawRange(0, 0);
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffcc, transparent: true, opacity: 0.4 });
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  const trail = { line, points: [], arrow };
+  trailLines.push(trail);
+  return trail;
+}
+
+function updateTrails() {
+  for (let i = trailLines.length - 1; i >= 0; i--) {
+    const trail = trailLines[i];
+    const arrow = trail.arrow;
+    if (!arrow.userData.alive && arrow.userData.age !== undefined) {
+      // Arrow is dead, fade trail
+      trail.line.material.opacity -= 0.02;
+      if (trail.line.material.opacity <= 0) {
+        scene.remove(trail.line);
+        trailLines.splice(i, 1);
+      }
+      continue;
+    }
+    if (arrow.userData.alive) {
+      trail.points.push(arrow.position.clone());
+      if (trail.points.length > 15) trail.points.shift();
+      const posAttr = trail.line.geometry.getAttribute('position');
+      for (let j = 0; j < trail.points.length; j++) {
+        posAttr.setXYZ(j, trail.points[j].x, trail.points[j].y, trail.points[j].z);
+      }
+      posAttr.needsUpdate = true;
+      trail.line.geometry.setDrawRange(0, trail.points.length);
+    }
+  }
+}
+
+// --- Shoot (Phase 1: power-based) ---
+function shoot(power) {
   if (!gameActive || arrowsLeft <= 0) return;
   arrowsLeft--;
   updateHUD();
 
   const arrow = createArrow();
   const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const speed = 20 + 40 * power;
   arrow.position.copy(camera.position);
   arrow.quaternion.copy(camera.quaternion);
   arrow.userData = {
-    velocity: dir.multiplyScalar(50),
+    velocity: dir.multiplyScalar(speed),
     alive: true,
     age: 0
   };
   scene.add(arrow);
   arrows.push(arrow);
 
+  // Create trail
+  createTrail(arrow);
+
   // Bow recoil
   bow.position.z = -0.5;
   setTimeout(() => { bow.position.z = -0.6; }, 100);
 
+  // Wind: randomize after each shot
+  randomizeWind();
+
+  // Phase 3E: slow-mo on last arrow
   if (arrowsLeft <= 0) {
-    setTimeout(endGame, 1500);
+    slowMoActive = true;
+    slowMoStartTime = performance.now() / 1000;
+    document.getElementById('slowmo-vignette').style.opacity = '1';
   }
 }
 
@@ -548,6 +825,13 @@ function checkHit(arrow) {
       arrow.userData.alive = false;
       const points = getTargetScore(dist, target.userData.radius);
       addScore(points, false);
+
+      // Phase 3B: Stick arrow in target
+      stickArrowInTarget(arrow, target, tip);
+
+      // Phase 3C: Hit marker
+      placeHitMarker(target, tip, dist, target.userData.radius);
+
       return true;
     }
   }
@@ -561,7 +845,6 @@ function checkHit(arrow) {
       arrow.userData.alive = false;
       mt.userData.alive = false;
 
-      // Explosion particles
       for (let j = 0; j < 12; j++) {
         const particle = new THREE.Mesh(
           new THREE.SphereGeometry(0.08, 6, 6),
@@ -578,7 +861,7 @@ function checkHit(arrow) {
           isParticle: true
         };
         scene.add(particle);
-        arrows.push(particle); // reuse arrows array for updates
+        arrows.push(particle);
       }
 
       scene.remove(mt);
@@ -595,6 +878,40 @@ function checkHit(arrow) {
   }
 
   return false;
+}
+
+// Phase 3B: Stick arrow in target
+function stickArrowInTarget(arrow, target, tipWorld) {
+  scene.remove(arrow);
+  const localPos = target.worldToLocal(tipWorld.clone());
+  // Nudge arrow tip into the target face
+  localPos.z -= 0.15;
+  arrow.position.copy(localPos);
+  // Point arrow toward target face (negative Z in target space)
+  arrow.quaternion.identity();
+  target.add(arrow);
+  stuckArrows.push({ arrow, target });
+}
+
+// Phase 3C: Hit marker on target
+function placeHitMarker(target, tipWorld, dist, maxRadius) {
+  const ratio = dist / maxRadius;
+  let color;
+  if (ratio < 0.22) color = 0xffdd00;      // bullseye gold
+  else if (ratio < 0.42) color = 0xff3333;  // red
+  else if (ratio < 0.62) color = 0x3399ff;  // blue
+  else if (ratio < 0.82) color = 0x222222;  // black
+  else color = 0xffffff;                     // white
+
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(0.03, 0.06, 16),
+    new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+  );
+  const localPos = target.worldToLocal(tipWorld.clone());
+  localPos.z += 0.01;
+  marker.position.copy(localPos);
+  target.add(marker);
+  hitMarkers.push({ marker, target });
 }
 
 function getTargetScore(dist, maxRadius) {
@@ -643,13 +960,44 @@ function updateHUD() {
 function startGame() {
   document.getElementById('start-screen').style.display = 'none';
   document.getElementById('game-over').style.display = 'none';
-  document.body.requestPointerLock();
 
-  // Clean up old arrows
+  if (!isTouchDevice) {
+    document.body.requestPointerLock();
+  } else {
+    // Request fullscreen + landscape on mobile
+    const el = document.documentElement;
+    if (el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {});
+    } else if (el.webkitRequestFullscreen) {
+      el.webkitRequestFullscreen();
+    }
+    try {
+      screen.orientation.lock('landscape').catch(() => {});
+    } catch(e) {}
+  }
+
+  // Clean up old arrows + trails + stuck arrows + hit markers
   arrows.forEach(a => scene.remove(a));
   arrows.length = 0;
   movingTargets.forEach(mt => scene.remove(mt));
   movingTargets.length = 0;
+  trailLines.forEach(t => scene.remove(t.line));
+  trailLines.length = 0;
+  stuckArrows.forEach(sa => sa.target.remove(sa.arrow));
+  stuckArrows.length = 0;
+  hitMarkers.forEach(hm => hm.target.remove(hm.marker));
+  hitMarkers.length = 0;
+
+  // Reset draw state
+  isDrawing = false;
+  drawStartTime = 0;
+  showNockedArrow(false);
+  updatePowerBar(0);
+  updateBowstring(0);
+
+  // Reset slow-mo
+  slowMoActive = false;
+  document.getElementById('slowmo-vignette').style.opacity = '0';
 
   arrowsLeft = TOTAL_ARROWS;
   score = 0;
@@ -660,52 +1008,159 @@ function startGame() {
   pitch = 0;
   nextMovingTargetTime = performance.now() + 3000;
 
+  // Phase 2: Difficulty progression
+  roundNumber++;
+  difficultyMultiplier = 1 + (roundNumber - 1) * 0.2;
+  windStrengthRange = 3;
+
   document.getElementById('score').textContent = '0';
   document.getElementById('best').textContent = `Best: ${bestScore}`;
+  document.getElementById('round-display').textContent = `Round ${roundNumber}`;
   updateHUD();
+  randomizeWind();
 }
 
 function endGame() {
   gameActive = false;
-  document.exitPointerLock();
+  if (!isTouchDevice) {
+    document.exitPointerLock();
+  }
+
+  // Reset draw
+  isDrawing = false;
+  showNockedArrow(false);
+  updatePowerBar(0);
+  updateBowstring(0);
+
+  // End slow-mo
+  slowMoActive = false;
+  document.getElementById('slowmo-vignette').style.opacity = '0';
 
   if (score > bestScore) bestScore = score;
 
   document.getElementById('final-score').textContent = score;
-  document.getElementById('breakdown').textContent =
-    `${hits}/${TOTAL_ARROWS} hits  |  ${bullseyes} bullseyes  |  Best: ${bestScore}`;
+  document.getElementById('breakdown').innerHTML =
+    `${hits}/${TOTAL_ARROWS} hits  |  ${bullseyes} bullseyes  |  Best: ${bestScore}<br>Round ${roundNumber}  |  Difficulty: x${difficultyMultiplier.toFixed(1)}`;
   document.getElementById('game-over').style.display = 'flex';
 }
 
 window.startGame = startGame;
 
-// --- Input ---
-document.addEventListener('mousemove', (e) => {
-  if (document.pointerLockElement && gameActive) {
-    yaw -= e.movementX * 0.002;
-    pitch -= e.movementY * 0.002;
-    pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
-  }
-});
+// --- Input: Desktop (gated behind !isTouchDevice) ---
+if (!isTouchDevice) {
+  document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement && gameActive) {
+      yaw -= e.movementX * 0.002;
+      pitch -= e.movementY * 0.002;
+      pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+    }
+  });
 
-document.addEventListener('click', () => {
-  if (document.pointerLockElement && gameActive) {
-    shoot();
-  }
-});
+  // Phase 1: mousedown to start draw, mouseup to fire
+  document.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (!document.pointerLockElement && gameActive) {
+      document.body.requestPointerLock();
+      return;
+    }
+    if (document.pointerLockElement && gameActive && arrowsLeft > 0 && !slowMoActive) {
+      isDrawing = true;
+      drawStartTime = performance.now();
+      showNockedArrow(true);
+    }
+  });
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && gameActive) {
-    // Allow pointer unlock
-  }
-});
+  document.addEventListener('mouseup', (e) => {
+    if (e.button !== 0) return;
+    if (isDrawing && gameActive) {
+      const power = getDrawPower();
+      isDrawing = false;
+      showNockedArrow(false);
+      updatePowerBar(0);
+      updateBowstring(0);
+      if (power > 0.05) {
+        shoot(power);
+      }
+    }
+  });
 
-// Re-lock pointer on click if game active
-document.addEventListener('click', () => {
-  if (!document.pointerLockElement && gameActive) {
-    document.body.requestPointerLock();
-  }
-});
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && gameActive) {
+      // Allow pointer unlock
+    }
+  });
+
+  // Re-lock pointer on click if game active
+  document.addEventListener('click', () => {
+    if (!document.pointerLockElement && gameActive) {
+      document.body.requestPointerLock();
+    }
+  });
+}
+
+// --- Input: Mobile Touch Controls (Phase 4) ---
+if (isTouchDevice) {
+  document.addEventListener('touchstart', (e) => {
+    if (!gameActive) return;
+    e.preventDefault();
+    if (touchId !== null) return;
+    const touch = e.changedTouches[0];
+    touchId = touch.identifier;
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+
+    // Start draw
+    if (arrowsLeft > 0 && !slowMoActive) {
+      isDrawing = true;
+      drawStartTime = performance.now();
+      showNockedArrow(true);
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!gameActive) return;
+    e.preventDefault();
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === touchId) {
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        yaw -= dx * 0.004;
+        pitch -= dy * 0.004;
+        pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchend', (e) => {
+    if (!gameActive) return;
+    e.preventDefault();
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === touchId) {
+        touchId = null;
+        if (isDrawing) {
+          const power = getDrawPower();
+          isDrawing = false;
+          showNockedArrow(false);
+          updatePowerBar(0);
+          updateBowstring(0);
+          if (power > 0.05) {
+            shoot(power);
+          }
+        }
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchcancel', (e) => {
+    touchId = null;
+    isDrawing = false;
+    showNockedArrow(false);
+    updatePowerBar(0);
+    updateBowstring(0);
+  });
+}
 
 // --- Resize ---
 window.addEventListener('resize', () => {
@@ -720,12 +1175,33 @@ const gravity = new THREE.Vector3(0, -9.81, 0);
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  let dt = Math.min(clock.getDelta(), 0.05);
   const now = performance.now();
+  const nowSec = now / 1000;
+
+  // Phase 3E: Slow-mo
+  if (slowMoActive) {
+    const elapsed = nowSec - slowMoStartTime;
+    if (elapsed > SLOWMO_DURATION) {
+      slowMoActive = false;
+      document.getElementById('slowmo-vignette').style.opacity = '0';
+      endGame();
+      return;
+    }
+    dt *= 0.2;
+  }
 
   // Camera rotation
   const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
   camera.quaternion.setFromEuler(euler);
+
+  // Phase 1: Update draw visuals
+  if (isDrawing) {
+    const power = getDrawPower();
+    updatePowerBar(power);
+    updateBowstring(power);
+    updateNockedArrowPosition(power);
+  }
 
   // Update arrows
   for (let i = arrows.length - 1; i >= 0; i--) {
@@ -757,8 +1233,9 @@ function animate() {
       continue;
     }
 
-    // Physics
+    // Physics: gravity + wind
     arrow.userData.velocity.add(gravity.clone().multiplyScalar(dt));
+    arrow.userData.velocity.add(wind.clone().multiplyScalar(dt));
     arrow.position.add(arrow.userData.velocity.clone().multiplyScalar(dt));
 
     // Orient arrow along velocity
@@ -770,15 +1247,19 @@ function animate() {
     // Check collisions
     if (checkHit(arrow)) {
       if (!arrow.userData.alive) {
-        // Arrow sticks
+        // Arrow sticks (handled in checkHit)
       }
     }
   }
 
-  // Spawn moving targets
-  if (gameActive && now > nextMovingTargetTime) {
+  // Update trails
+  updateTrails();
+
+  // Spawn moving targets (difficulty scales spawn interval)
+  if (gameActive && now > nextMovingTargetTime && !slowMoActive) {
     spawnMovingTarget();
-    nextMovingTargetTime = now + 3000 + Math.random() * 3000;
+    const baseInterval = 3000 + Math.random() * 3000;
+    nextMovingTargetTime = now + baseInterval / difficultyMultiplier;
   }
 
   // Update moving targets
@@ -788,22 +1269,26 @@ function animate() {
     mt.position.y += Math.sin(now * 0.002 + i) * 0.003;
 
     if (mt.userData.isBird) {
-      // Wing flap animation
       const flapAngle = Math.sin(now * 0.01) * 0.6;
       mt.traverse((child) => {
         if (child.name === 'leftWing') child.rotation.x = flapAngle;
         if (child.name === 'rightWing') child.rotation.x = -flapAngle;
       });
     } else {
-      // Rotate orb
       mt.rotation.y += dt * 2;
     }
 
-    // Remove if off screen
     if (Math.abs(mt.position.x) > 25) {
       scene.remove(mt);
       movingTargets.splice(i, 1);
     }
+  }
+
+  // Phase 3D: Animate clouds
+  for (const cloud of clouds) {
+    cloud.position.x += cloud.userData.speed * dt;
+    if (cloud.position.x > 80) cloud.position.x = -80;
+    if (cloud.position.x < -80) cloud.position.x = 80;
   }
 
   renderer.render(scene, camera);
