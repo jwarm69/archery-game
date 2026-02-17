@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archery Range</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 10;
+    display: flex; justify-content: space-between; padding: 20px 30px;
+  }
+  #hud div { color: #fff; font-size: 22px; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
+  #score { text-align: center; flex: 1; font-size: 28px !important; font-weight: bold; }
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 30px; height: 30px; pointer-events: none; z-index: 10;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: rgba(255,255,255,0.8);
+  }
+  #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+  #crosshair::after { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
+  #crosshair .dot {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 4px; height: 4px; background: #ff4444; border-radius: 50%;
+  }
+  #bonus-popup {
+    position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    color: #ffdd00; font-size: 36px; font-weight: bold; pointer-events: none;
+    text-shadow: 0 0 20px rgba(255,200,0,0.8); opacity: 0; z-index: 10;
+    transition: opacity 0.2s;
+  }
+  #hit-popup {
+    position: fixed; top: 45%; left: 50%; transform: translate(-50%, -50%);
+    color: #fff; font-size: 28px; font-weight: bold; pointer-events: none;
+    text-shadow: 0 0 10px rgba(255,255,255,0.5); opacity: 0; z-index: 10;
+    transition: opacity 0.2s;
+  }
+  #game-over {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); display: none; z-index: 20;
+    flex-direction: column; align-items: center; justify-content: center; color: #fff;
+  }
+  #game-over h1 { font-size: 52px; margin-bottom: 10px; }
+  #game-over .final-score { font-size: 72px; color: #ffdd00; margin: 20px 0; }
+  #game-over .breakdown { font-size: 20px; color: #aaa; margin-bottom: 30px; }
+  #game-over button {
+    padding: 15px 40px; font-size: 22px; background: #ff4444; color: #fff;
+    border: none; border-radius: 8px; cursor: pointer; pointer-events: all;
+    transition: background 0.2s;
+  }
+  #game-over button:hover { background: #ff6666; }
+  #start-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9); z-index: 20;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff;
+  }
+  #start-screen h1 { font-size: 56px; margin-bottom: 10px; }
+  #start-screen p { font-size: 20px; color: #aaa; margin-bottom: 30px; }
+  #start-screen button {
+    padding: 15px 40px; font-size: 22px; background: #4CAF50; color: #fff;
+    border: none; border-radius: 8px; cursor: pointer;
+    transition: background 0.2s;
+  }
+  #start-screen button:hover { background: #66BB6A; }
+  .arrow-icons { display: flex; gap: 4px; align-items: center; }
+  .arrow-icon {
+    width: 3px; height: 18px; background: #fff; position: relative; display: inline-block;
+  }
+  .arrow-icon::after {
+    content: ''; position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-bottom: 6px solid #ff4444;
+  }
+  .arrow-icon.used { opacity: 0.2; }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>Archery Range</h1>
+  <p>15 arrows. Aim true. Hit the bullseye.</p>
+  <button onclick="startGame()">Click to Play</button>
+</div>
+
+<div id="hud">
+  <div id="arrows-left"></div>
+  <div id="score">0</div>
+  <div id="best">Best: 0</div>
+</div>
+
+<div id="crosshair"><div class="dot"></div></div>
+<div id="bonus-popup">BONUS +15</div>
+<div id="hit-popup">+10</div>
+
+<div id="game-over">
+  <h1>Round Over</h1>
+  <div class="final-score" id="final-score">0</div>
+  <div class="breakdown" id="breakdown"></div>
+  <button onclick="startGame()">Play Again</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// --- Game State ---
+const TOTAL_ARROWS = 15;
+let arrowsLeft, score, hits, bullseyes, gameActive, bestScore = 0;
+let yaw = 0, pitch = 0;
+const arrows = [];
+const targets = [];
+const movingTargets = [];
+let nextMovingTargetTime = 0;
+
+// --- Three.js Setup ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 1.6, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// --- Sky ---
+const skyGeo = new THREE.SphereGeometry(200, 32, 32);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    topColor: { value: new THREE.Color(0x0055aa) },
+    bottomColor: { value: new THREE.Color(0x88ccff) },
+    offset: { value: 20 },
+    exponent: { value: 0.4 }
+  },
+  vertexShader: `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    uniform float offset;
+    uniform float exponent;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition + offset).y;
+      gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+    }
+  `
+});
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// --- Lighting ---
+const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(30, 40, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -50;
+sun.shadow.camera.right = 50;
+sun.shadow.camera.top = 50;
+sun.shadow.camera.bottom = -50;
+scene.add(sun);
+
+// --- Ground ---
+const groundGeo = new THREE.PlaneGeometry(200, 200);
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x3a7d2a });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Dirt patch under player
+const dirtGeo = new THREE.CircleGeometry(2, 32);
+const dirtMat = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
+const dirt = new THREE.Mesh(dirtGeo, dirtMat);
+dirt.rotation.x = -Math.PI / 2;
+dirt.position.y = 0.01;
+scene.add(dirt);
+
+// --- Fence ---
+function createFence() {
+  const group = new THREE.Group();
+  const postGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6);
+  const postMat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
+  const railGeo = new THREE.BoxGeometry(2.5, 0.06, 0.04);
+  for (let i = -20; i <= 20; i += 2.5) {
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.set(i, 0.6, -3);
+    post.castShadow = true;
+    group.add(post);
+  }
+  for (let i = -18.75; i <= 18.75; i += 2.5) {
+    const topRail = new THREE.Mesh(railGeo, postMat);
+    topRail.position.set(i, 1.0, -3);
+    group.add(topRail);
+    const botRail = new THREE.Mesh(railGeo, postMat);
+    botRail.position.set(i, 0.4, -3);
+    group.add(botRail);
+  }
+  return group;
+}
+scene.add(createFence());
+
+// --- Simple Trees ---
+function createTree(x, z) {
+  const group = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.2, 2, 8),
+    new THREE.MeshLambertMaterial({ color: 0x6B4226 })
+  );
+  trunk.position.y = 1;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  const leaves = new THREE.Mesh(
+    new THREE.SphereGeometry(1.2, 8, 8),
+    new THREE.MeshLambertMaterial({ color: 0x2d6b1e })
+  );
+  leaves.position.y = 2.5;
+  leaves.castShadow = true;
+  group.add(leaves);
+
+  group.position.set(x, 0, z);
+  return group;
+}
+
+// Scatter trees along the sides
+for (let i = 0; i < 12; i++) {
+  const side = Math.random() > 0.5 ? 1 : -1;
+  const x = side * (10 + Math.random() * 15);
+  const z = -(5 + Math.random() * 40);
+  scene.add(createTree(x, z));
+}
+
+// --- Target Creation ---
+function createTarget(distance, xOffset = 0) {
+  const group = new THREE.Group();
+
+  // Post
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.08, 2, 8),
+    new THREE.MeshLambertMaterial({ color: 0x6B4226 })
+  );
+  post.position.y = 1;
+  post.castShadow = true;
+  group.add(post);
+
+  // Target face
+  const rings = [
+    { radius: 0.8, color: 0xffffff },
+    { radius: 0.65, color: 0x222222 },
+    { radius: 0.5, color: 0x3399ff },
+    { radius: 0.35, color: 0xff3333 },
+    { radius: 0.18, color: 0xffdd00 },
+  ];
+
+  const targetFace = new THREE.Group();
+  rings.forEach((ring, i) => {
+    const geo = new THREE.CircleGeometry(ring.radius, 32);
+    const mat = new THREE.MeshLambertMaterial({ color: ring.color, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.z = 0.001 * i;
+    targetFace.add(mesh);
+  });
+
+  targetFace.position.set(0, 2, -0.05);
+  group.add(targetFace);
+
+  // Back board
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(1.8, 1.8, 0.12),
+    new THREE.MeshLambertMaterial({ color: 0xc9a96e })
+  );
+  board.position.set(0, 2, -0.1);
+  board.castShadow = true;
+  group.add(board);
+
+  group.position.set(xOffset, 0, -distance);
+
+  // Distance label
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${distance}m`, 64, 42);
+  const tex = new THREE.CanvasTexture(canvas);
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 0.5),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+  );
+  label.position.set(0, 3.2, 0);
+  group.add(label);
+
+  group.userData = { center: new THREE.Vector3(xOffset, 2, -distance), radius: 0.8, distance };
+  scene.add(group);
+  targets.push(group);
+  return group;
+}
+
+createTarget(12, -3);
+createTarget(22, 0);
+createTarget(35, 3);
+
+// --- Moving Target ---
+function spawnMovingTarget() {
+  const y = 2.5 + Math.random() * 3;
+  const z = -(10 + Math.random() * 25);
+  const startX = (Math.random() > 0.5 ? 1 : -1) * 20;
+  const speed = 4 + Math.random() * 4;
+
+  const group = new THREE.Group();
+
+  // Glowing orb
+  const orb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 16, 16),
+    new THREE.MeshStandardMaterial({
+      color: 0xff8800,
+      emissive: 0xff4400,
+      emissiveIntensity: 0.8,
+      metalness: 0.3,
+      roughness: 0.4
+    })
+  );
+  orb.castShadow = true;
+  group.add(orb);
+
+  // Inner glow
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.3, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffdd00 })
+  );
+  group.add(glow);
+
+  // Point light
+  const light = new THREE.PointLight(0xff6600, 2, 8);
+  group.add(light);
+
+  group.position.set(startX, y, z);
+  group.userData = {
+    speed: speed * (startX > 0 ? -1 : 1),
+    alive: true,
+    startX,
+    radius: 0.5,
+    center: group.position
+  };
+
+  scene.add(group);
+  movingTargets.push(group);
+}
+
+// --- Arrow Creation ---
+function createArrow() {
+  const group = new THREE.Group();
+
+  // Shaft
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.015, 0.8, 6),
+    new THREE.MeshLambertMaterial({ color: 0xc9a040 })
+  );
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = -0.4;
+  group.add(shaft);
+
+  // Tip
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.03, 0.1, 6),
+    new THREE.MeshLambertMaterial({ color: 0x888888 })
+  );
+  tip.rotation.x = -Math.PI / 2;
+  tip.position.z = -0.85;
+  group.add(tip);
+
+  // Fletching
+  const fletchGeo = new THREE.BufferGeometry();
+  const verts = new Float32Array([0,0,0, 0,0.06,0.15, 0,0,0.15]);
+  fletchGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  const fletchMat = new THREE.MeshBasicMaterial({ color: 0xff2222, side: THREE.DoubleSide });
+  for (let i = 0; i < 3; i++) {
+    const fletch = new THREE.Mesh(fletchGeo, fletchMat);
+    fletch.rotation.z = (i / 3) * Math.PI * 2;
+    fletch.position.z = 0;
+    group.add(fletch);
+  }
+
+  return group;
+}
+
+// --- Bow (visual, attached to camera) ---
+function createBow() {
+  const group = new THREE.Group();
+
+  const curve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(0, -0.5, 0),
+    new THREE.Vector3(0.15, 0, 0),
+    new THREE.Vector3(0, 0.5, 0)
+  );
+  const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.015, 8, false);
+  const bowMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+  const bow = new THREE.Mesh(tubeGeo, bowMat);
+  group.add(bow);
+
+  // String
+  const stringGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, -0.5, 0),
+    new THREE.Vector3(0, 0.5, 0)
+  ]);
+  const stringMat = new THREE.LineBasicMaterial({ color: 0xdddddd });
+  group.add(new THREE.Line(stringGeo, stringMat));
+
+  group.position.set(0.4, -0.25, -0.6);
+  group.rotation.z = -0.1;
+  return group;
+}
+
+const bow = createBow();
+camera.add(bow);
+scene.add(camera);
+
+// --- Shoot ---
+function shoot() {
+  if (!gameActive || arrowsLeft <= 0) return;
+  arrowsLeft--;
+  updateHUD();
+
+  const arrow = createArrow();
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  arrow.position.copy(camera.position);
+  arrow.quaternion.copy(camera.quaternion);
+  arrow.userData = {
+    velocity: dir.multiplyScalar(50),
+    alive: true,
+    age: 0
+  };
+  scene.add(arrow);
+  arrows.push(arrow);
+
+  // Bow recoil
+  bow.position.z = -0.5;
+  setTimeout(() => { bow.position.z = -0.6; }, 100);
+
+  if (arrowsLeft <= 0) {
+    setTimeout(endGame, 1500);
+  }
+}
+
+// --- Collision Detection ---
+function checkHit(arrow) {
+  const tip = arrow.position.clone().add(
+    new THREE.Vector3(0, 0, -0.85).applyQuaternion(arrow.quaternion)
+  );
+
+  // Check static targets
+  for (const target of targets) {
+    const center = target.userData.center.clone();
+    const dist = tip.distanceTo(center);
+    if (dist < target.userData.radius) {
+      arrow.userData.alive = false;
+      const points = getTargetScore(dist, target.userData.radius);
+      addScore(points, false);
+      return true;
+    }
+  }
+
+  // Check moving targets
+  for (let i = movingTargets.length - 1; i >= 0; i--) {
+    const mt = movingTargets[i];
+    if (!mt.userData.alive) continue;
+    const dist = tip.distanceTo(mt.position);
+    if (dist < mt.userData.radius + 0.2) {
+      arrow.userData.alive = false;
+      mt.userData.alive = false;
+
+      // Explosion particles
+      for (let j = 0; j < 12; j++) {
+        const particle = new THREE.Mesh(
+          new THREE.SphereGeometry(0.08, 6, 6),
+          new THREE.MeshBasicMaterial({ color: 0xff8800 })
+        );
+        particle.position.copy(mt.position);
+        particle.userData = {
+          velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 8,
+            Math.random() * 6,
+            (Math.random() - 0.5) * 8
+          ),
+          age: 0,
+          isParticle: true
+        };
+        scene.add(particle);
+        arrows.push(particle); // reuse arrows array for updates
+      }
+
+      scene.remove(mt);
+      movingTargets.splice(i, 1);
+      addScore(15, true);
+      return true;
+    }
+  }
+
+  // Check ground hit
+  if (tip.y <= 0.05) {
+    arrow.userData.alive = false;
+    return true;
+  }
+
+  return false;
+}
+
+function getTargetScore(dist, maxRadius) {
+  const ratio = dist / maxRadius;
+  if (ratio < 0.22) { bullseyes++; return 10; }
+  if (ratio < 0.42) return 8;
+  if (ratio < 0.62) return 6;
+  if (ratio < 0.82) return 4;
+  return 2;
+}
+
+function addScore(points, isBonus) {
+  score += points;
+  hits++;
+  document.getElementById('score').textContent = score;
+
+  if (isBonus) {
+    showPopup('bonus-popup', 'BONUS +15');
+  } else {
+    showPopup('hit-popup', `+${points}`);
+  }
+}
+
+function showPopup(id, text) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 800);
+}
+
+// --- HUD ---
+function updateHUD() {
+  const container = document.getElementById('arrows-left');
+  container.innerHTML = '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'arrow-icons';
+  for (let i = 0; i < TOTAL_ARROWS; i++) {
+    const icon = document.createElement('div');
+    icon.className = 'arrow-icon' + (i >= arrowsLeft ? ' used' : '');
+    wrapper.appendChild(icon);
+  }
+  container.appendChild(wrapper);
+}
+
+// --- Game Flow ---
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('game-over').style.display = 'none';
+  document.body.requestPointerLock();
+
+  // Clean up old arrows
+  arrows.forEach(a => scene.remove(a));
+  arrows.length = 0;
+  movingTargets.forEach(mt => scene.remove(mt));
+  movingTargets.length = 0;
+
+  arrowsLeft = TOTAL_ARROWS;
+  score = 0;
+  hits = 0;
+  bullseyes = 0;
+  gameActive = true;
+  yaw = 0;
+  pitch = 0;
+  nextMovingTargetTime = performance.now() + 3000;
+
+  document.getElementById('score').textContent = '0';
+  document.getElementById('best').textContent = `Best: ${bestScore}`;
+  updateHUD();
+}
+
+function endGame() {
+  gameActive = false;
+  document.exitPointerLock();
+
+  if (score > bestScore) bestScore = score;
+
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('breakdown').textContent =
+    `${hits}/${TOTAL_ARROWS} hits  |  ${bullseyes} bullseyes  |  Best: ${bestScore}`;
+  document.getElementById('game-over').style.display = 'flex';
+}
+
+window.startGame = startGame;
+
+// --- Input ---
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement && gameActive) {
+    yaw -= e.movementX * 0.002;
+    pitch -= e.movementY * 0.002;
+    pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+  }
+});
+
+document.addEventListener('click', () => {
+  if (document.pointerLockElement && gameActive) {
+    shoot();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && gameActive) {
+    // Allow pointer unlock
+  }
+});
+
+// Re-lock pointer on click if game active
+document.addEventListener('click', () => {
+  if (!document.pointerLockElement && gameActive) {
+    document.body.requestPointerLock();
+  }
+});
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// --- Game Loop ---
+const clock = new THREE.Clock();
+const gravity = new THREE.Vector3(0, -9.81, 0);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const now = performance.now();
+
+  // Camera rotation
+  const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+  camera.quaternion.setFromEuler(euler);
+
+  // Update arrows
+  for (let i = arrows.length - 1; i >= 0; i--) {
+    const arrow = arrows[i];
+
+    // Handle particles
+    if (arrow.userData.isParticle) {
+      arrow.userData.age += dt;
+      if (arrow.userData.age > 1) {
+        scene.remove(arrow);
+        arrows.splice(i, 1);
+        continue;
+      }
+      arrow.userData.velocity.add(gravity.clone().multiplyScalar(dt));
+      arrow.position.add(arrow.userData.velocity.clone().multiplyScalar(dt));
+      arrow.material.opacity = 1 - arrow.userData.age;
+      arrow.material.transparent = true;
+      arrow.scale.setScalar(1 - arrow.userData.age * 0.5);
+      continue;
+    }
+
+    if (!arrow.userData.alive) continue;
+
+    arrow.userData.age += dt;
+    if (arrow.userData.age > 5) {
+      arrow.userData.alive = false;
+      scene.remove(arrow);
+      arrows.splice(i, 1);
+      continue;
+    }
+
+    // Physics
+    arrow.userData.velocity.add(gravity.clone().multiplyScalar(dt));
+    arrow.position.add(arrow.userData.velocity.clone().multiplyScalar(dt));
+
+    // Orient arrow along velocity
+    const dir = arrow.userData.velocity.clone().normalize();
+    const quat = new THREE.Quaternion();
+    quat.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
+    arrow.quaternion.copy(quat);
+
+    // Check collisions
+    if (checkHit(arrow)) {
+      if (!arrow.userData.alive) {
+        // Arrow sticks
+      }
+    }
+  }
+
+  // Spawn moving targets
+  if (gameActive && now > nextMovingTargetTime) {
+    spawnMovingTarget();
+    nextMovingTargetTime = now + 4000 + Math.random() * 5000;
+  }
+
+  // Update moving targets
+  for (let i = movingTargets.length - 1; i >= 0; i--) {
+    const mt = movingTargets[i];
+    mt.position.x += mt.userData.speed * dt;
+    mt.position.y += Math.sin(now * 0.002 + i) * 0.003;
+
+    // Rotate orb
+    mt.rotation.y += dt * 2;
+
+    // Remove if off screen
+    if (Math.abs(mt.position.x) > 25) {
+      scene.remove(mt);
+      movingTargets.splice(i, 1);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
